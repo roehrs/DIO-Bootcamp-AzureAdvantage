@@ -1,0 +1,121 @@
+Passo 1: Configurar o Repositório no GitLab
+Criar um Novo Projeto no GitLab.
+Criar duas branches: docker-deploy e k8s-deploy.
+Branch: docker-deploy
+1. Adicionar o Arquivo .gitlab-ci.yml
+stages:
+  - build
+  - push
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+
+# Build Docker Image
+build_image:
+  stage: build
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA .
+  only:
+    - docker-deploy
+
+# Push Docker Image to GitLab Container Registry
+push_image:
+  stage: push
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  only:
+    - docker-deploy
+
+# Deploy Docker Container
+deploy:
+  stage: deploy
+  script:
+    - docker run -d -p 3000:3000 $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  only:
+    - docker-deploy
+2. Criar um Dockerfile
+FROM node:14
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+Branch: k8s-deploy
+1. Adicionar o Arquivo .gitlab-ci.yml
+stages:
+  - build
+  - push
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  KUBECONFIG: /path/to/kubeconfig
+
+# Build Docker Image
+build_image:
+  stage: build
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA .
+  only:
+    - k8s-deploy
+
+# Push Docker Image to GitLab Container Registry
+push_image:
+  stage: push
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  only:
+    - k8s-deploy
+
+# Deploy to Kubernetes on GCP
+deploy:
+  stage: deploy
+  script:
+    - kubectl apply -f k8s/deployment.yaml
+    - kubectl set image deployment/app app=$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  only:
+    - k8s-deploy
+2. Criar um Dockerfile
+Mesmo Dockerfile usado na branch docker-deploy.
+
+3. Configurar Kubernetes Deployment
+Na pasta k8s, crie um arquivo deployment.yaml:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+      - name: app
+        image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+        ports:
+        - containerPort: 3000
+Passo 2: Configurar Variáveis de Ambiente no GitLab
+No GitLab, vá para Settings > CI/CD > Variables e adicione as seguintes variáveis:
+CI_REGISTRY_USER
+CI_REGISTRY_PASSWORD
+CI_REGISTRY
+CI_REGISTRY_IMAGE
+KUBECONFIG (caminho para o arquivo de configuração do Kubernetes)
+Conclusão:
+Com essas configurações, você terá dois pipelines separados em duas branches, um para deploy em Docker e outro para deploy em Kubernetes na GCP. Faça commit e push das mudanças em cada branch e verifique a execução dos pipelines no GitLab.
